@@ -4,8 +4,14 @@ base::suppressMessages({
   library(jsonlite)
   library(prophet)
   library(tictoc)
+  library(future)
 })
 
 source('functions/get_data.R')
 
-btc_sample_data <- get_data("btc")
+btc <- get_data("btc", FALSE)
+
+# Forecasting
+df <- btc %>% 
+  dplyr::select('ds' = date, 'y' = close)
+
