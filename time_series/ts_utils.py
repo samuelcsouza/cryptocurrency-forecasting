@@ -5,6 +5,7 @@ import numpy as np
 import requests
 import json
 import os
+from datetime import datetime, date
 from dotenv import load_dotenv
 
 ## for plotting
@@ -43,6 +44,38 @@ from tslearn.clustering import TimeSeriesKMeans
 ###############################################################################
 #                         TS ANALYSIS                                         #
 ###############################################################################
+
+def get_data_api_toTs(ini,coin):
+    coin_url = os.getenv(coin.upper()+"_HISTOHOUR")
+    if ini == 0 :
+         request = requests.get(coin_url)
+    else:
+        request = requests.get(coin_url+f"&toTs={ini}")
+    todo = json.loads(request.content)
+    return todo['Data']['Data']
+
+def convertToDF(dfJSON):
+    return(pd.json_normalize(dfJSON))
+
+'''
+get cryptocurrency dataSet
+:parameter
+    :param coin: coin name (BTC,ETH or XRP)
+    :param researches: number of observations * 2001
+'''
+
+def get_data_df(coin,researches):
+    load_dotenv()
+    data = get_data_api_toTs(0,coin)
+    df_aux = convertToDF(data)
+    for x in range(researches-1):
+        ini = df_aux['time'][0]
+        print("Buscando dados de : ",datetime.fromtimestamp(ini))
+        data1=get_data_api_toTs(ini,coin)
+        df_aux1 = convertToDF(data1)
+        df_aux = df_aux1.append(df_aux,ignore_index=True)
+    return df_aux
+    
 '''
 get cryptocurrency dataSet
 :parameter
