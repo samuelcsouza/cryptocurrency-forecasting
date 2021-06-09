@@ -8,6 +8,9 @@ import os
 from datetime import datetime, date
 from dotenv import load_dotenv
 
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+
 ## for plotting
 import matplotlib.pyplot as plt
 import matplotlib.patches as pltpatches
@@ -167,6 +170,39 @@ def fit_trend(ts, degree=1, plot=True, figsize=(15,5)):
         plt.show()
     return dtf, params
         
+'''
+Fit a parametric trend poly.
+:parameter
+    :param ts: pandas Series
+    :param degree: polynomial order, ex. if 2 --> trend line = constant + a*x + b*x^2 ...
+'''
+def fit_poly(dtf_poly, degree=2, plot=True, figsize=(15,5)):
+    
+    X = dtf_poly[['time']]
+    y = dtf_poly[['close']]
+
+    pre_process = PolynomialFeatures(degree=degree)
+
+    X_poly = pre_process.fit_transform(X)
+    pr_model = LinearRegression()
+    # Fit our preprocessed data to the polynomial regression model
+    pr_model.fit(X_poly, y)
+    # Store our predicted Humidity values in the variable y_new
+    y_pred = pr_model.predict(X_poly)
+    # Plot our model on our data
+    DS = []
+    for result in dtf_poly['time']:
+        DS.append(datetime.fromtimestamp(result)) 
+    if plot is True:
+        plt.figure(figsize=figsize)
+        plt.plot(DS, y, color = "black", label="ts")
+        plt.xlabel("data")
+        plt.ylabel("valor")
+        plt.title("Polinomial")
+        plt.plot(DS, y_pred, color="red", label="polinomial")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
 
 '''
 Defferenciate ts.
