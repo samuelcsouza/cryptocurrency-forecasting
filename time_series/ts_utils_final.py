@@ -176,33 +176,90 @@ Fit a parametric trend poly.
     :param ts: pandas Series
     :param degree: polynomial order, ex. if 2 --> trend line = constant + a*x + b*x^2 ...
 '''
-def fit_poly(dtf_poly, degree=2, plot=True, figsize=(15,5)):
+def fit_poly(ts_train, ts_test, degree=2, plot=True, figsize=(6,6)):      
+    ts = ts_train.append(ts_test)
+ 
+    x = ts.reset_index().index
+    y = ts.values
     
-    X = dtf_poly[['time']]
-    y = dtf_poly[['close']]
+    params = np.polyfit(x, y,degree)
+    poly1d_fn = np.poly1d(params) 
+    y_pred = poly1d_fn(x)
+    
+    ts_plot = ts.reset_index()
+    poly = pd.DataFrame({'forecast': y_pred, 'x': ts.reset_index()['date'], 'ts': ts_plot['sales']})
 
-    pre_process = PolynomialFeatures(degree=degree)
-
-    X_poly = pre_process.fit_transform(X)
-    pr_model = LinearRegression()
-    # Fit our preprocessed data to the polynomial regression model
-    pr_model.fit(X_poly, y)
-    # Store our predicted Humidity values in the variable y_new
-    y_pred = pr_model.predict(X_poly)
-    # Plot our model on our data
-    DS = []
-    for result in dtf_poly['time']:
-        DS.append(datetime.fromtimestamp(result)) 
+    ## plot
     if plot is True:
         plt.figure(figsize=figsize)
-        plt.plot(DS, y, color = "black", label="ts")
-        plt.xlabel("data")
-        plt.ylabel("valor")
-        plt.title("Polinomial")
-        plt.plot(DS, y_pred, color="red", label="polinomial")
+        es_ts = poly[["x","ts"]]
+        es_fc = poly[["x","forecast"]]
+        print(es_fc)
+        plt.plot(es_ts['x'], es_ts['ts'],color="black", label = "Histórico")
+        plt.plot(es_fc['x'], es_fc['forecast'],color="green", label = "Treinamento")
+        plt.xlabel("Data")
+        plt.xticks(rotation=45)
+        plt.ylabel("US$")
         plt.grid(True)
         plt.legend()
+        if degree > 1 :
+            plt.savefig('regressao_polinomial_train.png', format='png', bbox_inches='tight')
+        else:
+            plt.savefig('regressao_linear_train.png', format='png', bbox_inches='tight')
+        
         plt.show()
+        print('Figura Salva!')
+        
+        
+        plt.figure(figsize=figsize)
+        
+        first_idx = poly[pd.notnull(poly["forecast"])].index[0]
+        first_loc = poly.index.tolist().index(first_idx)
+        zoom_idx = poly.index[first_loc-len(ts_test)]
+        es_ts = poly.loc[zoom_idx:][["x","ts"]]
+        es_fc = poly.loc[zoom_idx:][["x","forecast"]]
+        plt.plot(es_ts['x'], es_ts['ts'],color="black", label = "Histórico")
+        plt.plot(es_fc['x'], es_fc['forecast'],color="green", label = "Teste")
+        plt.xlabel("Data")
+        plt.xticks(rotation=45)
+        plt.ylabel("US$")
+        plt.grid(True)
+        plt.legend()
+        if degree > 1 :
+            plt.savefig('regressao_polinomial_test.png', format='png', bbox_inches='tight')
+        else:
+            plt.savefig('regressao_linear_test.png', format='png', bbox_inches='tight')
+        
+        plt.show()
+        print('Figura Salva!')
+
+    d = y - y_pred
+    mape = np.mean(np.abs(d / y)) * 100
+    mse = np.mean(d**2)
+    mae = np.mean(abs(d))
+    rmse = np.sqrt(mse)
+    print("Results by manual calculation: Treinamento")
+    print("MAPE:%.4f" %mape,"%")
+    print("MAE:%.4f" %mae)
+    print("MSE:%.4f" %mse)
+    print("RMSE:%.4f" %rmse)
+    es_ts = poly.loc[zoom_idx:][["x","ts"]]
+    es_fc = poly.loc[zoom_idx:][["x","forecast"]]
+    poly["error"] = es_ts["ts"] - es_fc["forecast"]
+    poly["error_pct"] = poly["error"] / es_ts["ts"]
+    ### kpi
+    error_mean = poly["error"].mean() 
+    error_std = poly["error"].std() 
+    mae = poly["error"].apply(lambda x: np.abs(x)).mean()  #mean absolute error
+    mape = poly["error_pct"].apply(lambda x: np.abs(x)).mean() *100 #mean absolute error %
+    mse = poly["error"].apply(lambda x: x**2).mean()  #mean squared error
+    rmse = np.sqrt(mse)  #root mean squared error
+    print("Results by manual calculation Teste:")
+    print("MAPE:%.4f" %mape,"%")
+    print("MAE:%.4f" %mae)
+    print("MSE:%.4f" %mse)
+    print("RMSE:%.4f" %rmse)
+ 
 
 '''
 Defferenciate ts.
@@ -228,7 +285,7 @@ Find outliers using sklearn unsupervised support vetcor machine.
 :return
     dtf with raw ts, outlier 1/0 (yes/no), numeric index
 '''
-def find_outliers(ts, perc=0.01, figsize=(15,5)):
+def find_outliers(ts, perc=0.01, figsize=(6,6)):
     ## fit svm
     scaler = preprocessing.StandardScaler()
     ts_scaled = scaler.fit_transform(ts.values.reshape(-1,1))
@@ -252,13 +309,17 @@ def find_outliers(ts, perc=0.01, figsize=(15,5)):
 '''
 Interpolate outliers in a ts.
 '''
-def remove_outliers(ts, outliers_idx, figsize=(15,5)):
+def remove_outliers(ts, outliers_idx, figsize=(6,6)):
     ts_clean = ts.copy()
     ts_clean.loc[outliers_idx] = np.nan
     ts_clean = ts_clean.interpolate(method="linear")
-    ax = ts.plot(figsize=figsize, color="red", alpha=0.5, title="Remove outliers", label="original", legend=True)
-    ts_clean.plot(ax=ax, grid=True, color="black", label="interpolated", legend=True)
+    ax = ts.plot(figsize=figsize, color="red", alpha=0.5, label="Histórico", legend=True)
+    ts_clean.plot(ax=ax, grid=True, color="black", label="Interpolado", legend=True)
     ax.set(xlabel=None)
+    plt.xlabel("Data")
+    plt.ylabel("US$")
+    plt.legend()
+    plt.savefig('remocao_outliers.png', format='png', bbox_inches='tight')
     plt.show()
     return ts_clean
 
@@ -294,7 +355,7 @@ def resistence_support(ts, window=30, trend=False, plot=True, figsize=(15,5)):
     
     ## plot
     if plot is True:
-        ax = dtf["ts"].plot(color="black", figsize=figsize, grid=True, title="Resistence and Support")
+        ax = dtf["ts"].plot(color="black", figsize=figsize, grid=True)
         dtf["resistence"].plot(ax=ax, color="darkviolet", label="resistence", grid=True, linestyle="--")
         dtf["support"].plot(ax=ax, color="green", label="support", grid=True, linestyle="--")
         ax.scatter(x=dtf["max"].index, y=dtf["max"].values, color="darkviolet", label="max")
@@ -318,8 +379,8 @@ Split train/test from any given data point.
 :return
     ts_train, ts_test, exog_train, exog_test
 '''
-def split_train_test(ts, exog=None, test=0.20, plot=True, figsize=(15,5)):
-    ## define splitting point
+def split_train_test(ts, exog=None, test=0.20, plot=True, figsize=(6,6)):
+     ## define splitting point
     if type(test) is float:
         split = int(len(ts)*(1-test))
         perc = test
@@ -334,12 +395,21 @@ def split_train_test(ts, exog=None, test=0.20, plot=True, figsize=(15,5)):
     ## split ts
     ts_train = ts.head(split)
     ts_test = ts.tail(len(ts)-split)
+    
+    upper_bound = max(ts) * 1.05
+    lower_bound = min(ts) * 1.05
+    
     if plot is True:
-        fig, ax = plt.subplots(nrows=1, ncols=2, sharex=False, sharey=True, figsize=figsize)
-        ts_train.plot(ax=ax[0], grid=True, title="Train", color="black")
-        ts_test.plot(ax=ax[1], grid=True, title="Test", color="black")
-        ax[0].set(xlabel=None)
-        ax[1].set(xlabel=None)
+        ts_train.plot(grid=True, title="", color="black")
+        plt.xlabel('Data')
+        plt.ylabel('US$')
+        plt.savefig('dados_treino.png', format='png', bbox_inches='tight')
+        plt.show()
+        
+        ts_test.plot(grid=True, title="", color="black")
+        plt.xlabel('Data')
+        plt.ylabel('US$')
+        plt.savefig('dados_teste.png', format='png', bbox_inches='tight')
         plt.show()
         
     ## split exog
@@ -349,7 +419,6 @@ def split_train_test(ts, exog=None, test=0.20, plot=True, figsize=(15,5)):
         return ts_train, ts_test, exog_train, exog_test
     else:
         return ts_train, ts_test
-
 
 
 '''
@@ -390,6 +459,17 @@ def utils_evaluate_ts_model(dtf, conf=0.95, title=None, plot=True, figsize=(20,1
         ### kpi
         residuals_mean = dtf["residuals"].mean()
         residuals_std = dtf["residuals"].std()
+        
+        ## Model error
+        ### add column
+        dtf["model_error_pct"] = dtf["residuals"] / dtf["ts"]
+        ### kpi
+        model_error_mean = dtf["residuals"].mean() 
+        model_error_std = dtf["residuals"].std() 
+        model_mae = dtf["residuals"].apply(lambda x: np.abs(x)).mean()  #mean absolute error
+        model_mape = dtf["model_error_pct"].apply(lambda x: np.abs(x)).mean()  #mean absolute error %
+        model_mse = dtf["residuals"].apply(lambda x: x**2).mean()  #mean squared error
+        model_rmse = np.sqrt(model_mse)  #root mean squared error
 
         ## forecasting error
         ### add column
@@ -412,30 +492,44 @@ def utils_evaluate_ts_model(dtf, conf=0.95, title=None, plot=True, figsize=(20,1
         
         ## plot
         if plot is True:
-            fig = plt.figure(figsize=figsize)
-            fig.suptitle(title, fontsize=20)   
-            ax1 = fig.add_subplot(2,2, 1)
-            ax2 = fig.add_subplot(2,2, 2, sharey=ax1)
-            ax3 = fig.add_subplot(2,2, 3)
-            ax4 = fig.add_subplot(2,2, 4)
+            plt.figure(figsize=figsize)
             ### training
-            dtf[pd.notnull(dtf["model"])][["ts","model"]].plot(color=["black","green"], title="Train (obs: "+str(len(dtf[pd.notnull(dtf["model"])]))+")", grid=True, ax=ax1)      
-            ax1.set(xlabel=None)
-            ### test
-            dtf[pd.isnull(dtf["model"])][["ts","forecast"]].plot(color=["black","red"], title="Test (obs: "+str(len(dtf[pd.isnull(dtf["model"])]))+")", grid=True, ax=ax2)
-            ax2.fill_between(x=dtf.index, y1=dtf['lower'], y2=dtf['upper'], color='b', alpha=0.2)
-            ax2.set(xlabel=None)
-            ### residuals
-            dtf[["residuals","error"]].plot(ax=ax3, color=["green","red"], title="Residuals", grid=True)
-            ax3.set(xlabel=None)
-            ### residuals distribution
-            dtf[["residuals","error"]].plot(ax=ax4, color=["green","red"], kind='kde', title="Residuals Distribution", grid=True)
-            ax4.axvline(dtf["residuals"].mean(), ls='--', color="green", label="mean: "+str(round(dtf["residuals"].mean(),2)))
-            ax4.axvline(dtf["error"].mean(), ls='--', color="red", label="mean: "+str(round(dtf["error"].mean(),2)))
-            ax4.set(ylabel=None)
-            ax4.legend()
+            ts = dtf[pd.notnull(dtf["model"])][["ts"]]
+            print(ts.reset_index().head())
+            model = dtf[pd.notnull(dtf["model"])][["model"]]
+            print(model.reset_index().head())
+            plt.plot(ts, color='black', label='Histórico')
+            plt.plot(model, color='green', label='Treinamento')
+            plt.xlabel("Data")
+            plt.xticks(rotation=45)
+            plt.ylabel("US$")
+            plt.grid(True)
+            plt.legend()
+            plt.savefig(title+'treinamento.png', format='png', bbox_inches='tight')
             plt.show()
-            print("Training --> Residuals mean:", np.round(residuals_mean), " | std:", np.round(residuals_std))
+            print('\nFigura Salva!\n')
+
+            ### testing
+
+
+            plt.figure(figsize=figsize)
+            ts = dtf[pd.isnull(dtf["model"])][["ts"]]
+            forecast = dtf[pd.isnull(dtf["model"])][["forecast"]]
+
+            plt.plot(ts, color='black', label='Histórico')
+            plt.plot(forecast, color='green', label='Teste')
+            plt.xlabel("Data")
+            plt.fill_between(x=dtf.index, y1=dtf['lower'], y2=dtf['upper'], color='b', alpha=0.2)
+            plt.xticks(rotation=45)
+            plt.ylabel("US$")
+            plt.grid(True)
+            plt.legend()
+            plt.savefig(title+'teste.png', format='png', bbox_inches='tight')
+            plt.show()
+
+            print('\nFigura Salva!\n')
+            print("Training --> Residuals mean:", np.round(residuals_mean), " | std:", np.round(residuals_std),
+                  " | mae:",np.round(model_mae), " | mape:",np.round(model_mape*100), "%  | mse:",np.round(model_mse), " | rmse:",np.round(model_rmse))
             print("Test --> Error mean:", np.round(error_mean), " | std:", np.round(error_std),
                   " | mae:",np.round(mae), " | mape:",np.round(mape*100), "%  | mse:",np.round(mse), " | rmse:",np.round(rmse))
         
@@ -475,7 +569,7 @@ Plot unknown future forecast and produce conf_int with residual_std and pred_int
 :return
     dtf with columns "ts", "model", "residuals", "lower", "forecast", "upper" (No error)
 '''
-def utils_add_forecast_int(dtf, conf=0.95, plot=True, zoom=30, figsize=(15,5)):
+def utils_add_forecast_int(dtf, conf=0.95, plot=True, zoom=30, figsize=(6,6), title=None):
     ## residuals from fitting
     ### add column
     dtf["residuals"] = dtf["ts"] - dtf["model"]
@@ -491,22 +585,38 @@ def utils_add_forecast_int(dtf, conf=0.95, plot=True, zoom=30, figsize=(15,5)):
 
     ## plot
     if plot is True:
-        fig = plt.figure(figsize=figsize)
-        
+        plt.figure(figsize=figsize)
         ### entire series
-        ax0 = plt.subplot2grid((1,3), (0,0), rowspan=1, colspan=2)
-        dtf[["ts","forecast"]].plot(color=["black","red"], grid=True, ax=ax0, title="History + Future")
-        ax0.fill_between(x=dtf.index, y1=dtf['lower'], y2=dtf['upper'], color='b', alpha=0.2)
-        ax0.set(xlabel=None)
+        es_ts = dtf[["ts"]]
+        es_fc = dtf[["forecast"]]
+        plt.plot(es_ts,color="black", label = "Histórico")
+        plt.plot(es_fc,color="red", label = "Projeção")
+        plt.xlabel("Data")
+        plt.fill_between(x=dtf.index, y1=dtf['lower'], y2=dtf['upper'], color='b', alpha=0.2)
+        plt.xticks(rotation=45)
+        plt.ylabel("US$")
+        plt.grid(True)
+        plt.legend()
+        plt.savefig(title+'_entire_series.png', format='png', bbox_inches='tight')
+        plt.show()
 
         ### focus on last
-        ax1 = plt.subplot2grid((1,3), (0,2), rowspan=1, colspan=1)
+        plt.figure(figsize=figsize)
         first_idx = dtf[pd.notnull(dtf["forecast"])].index[0]
         first_loc = dtf.index.tolist().index(first_idx)
         zoom_idx = dtf.index[first_loc-zoom]
-        dtf.loc[zoom_idx:][["ts","forecast"]].plot(color=["black","red"], grid=True, ax=ax1, title="Zoom on the last "+str(zoom)+" observations")
-        ax1.fill_between(x=dtf.loc[zoom_idx:].index, y1=dtf.loc[zoom_idx:]['lower'], y2=dtf.loc[zoom_idx:]['upper'], color='b', alpha=0.2)
-        ax1.set(xlabel=None)
+        es_ts = dtf.loc[zoom_idx:][["ts"]]
+        es_fc = dtf.loc[zoom_idx:][["forecast"]]
+        plt.plot(es_ts,color="black", label = "Histórico")
+        plt.plot(es_fc,color="red", label = "Projeção")
+        
+        plt.xlabel("Data")
+        plt.fill_between(x=dtf.loc[zoom_idx:].index, y1=dtf.loc[zoom_idx:]['lower'], y2=dtf.loc[zoom_idx:]['upper'], color='b', alpha=0.2)
+        plt.xticks(rotation=45)
+        plt.ylabel("US$")
+        plt.grid(True)
+        plt.legend()
+        plt.savefig(title+'_zoom.png', format='png', bbox_inches='tight')
         plt.show()
     return dtf[["ts", "model", "residuals", "lower", "forecast", "upper"]]
 
@@ -792,7 +902,7 @@ Forecast unknown future with sarimax or expsmooth.
     :param freq: None or str - 'B' business day, 'D' daily, 'W' weekly, 'M' monthly, 'A' annual, 'Q' quarterly
     :param zoom: for plotting
 '''
-def forecast_autoregressive(ts, model=None, pred_ahead=None, end=None, freq="D", conf=0.95, zoom=30, figsize=(15,5)):
+def forecast_autoregressive(ts, model=None, pred_ahead=None, end=None, freq="D", conf=0.95, zoom=30, figsize=(6,6)):
     ## model
     model = smt.SARIMAX(ts, order=(1,1,1), seasonal_order=(0,0,0,0)).fit() if model is None else model 
 
@@ -813,10 +923,11 @@ def forecast_autoregressive(ts, model=None, pred_ahead=None, end=None, freq="D",
         dtf_preds = preds.predicted_mean.to_frame(name="forecast")
         ci = preds.conf_int(1-conf).values
         dtf_preds["lower"], dtf_preds["upper"] = ci[:,0], ci[:,1]
-        
+    #dtf_preds.index, dtf_preds.index.freq = index, 'D'
+    #print(dtf_preds)
     ## add intervals and plot
     dtf = dtf.append(dtf_preds)
-    dtf = utils_add_forecast_int(dtf, conf=conf, zoom=zoom)
+    dtf = utils_add_forecast_int(dtf, conf=conf, zoom=zoom, title="SARIMAX", figsize=figsize)
     return dtf
 
 
@@ -991,7 +1102,7 @@ Forecast unknown future.
     :param freq: None or str - 'B' business day, 'D' daily, 'W' weekly, 'M' monthly, 'A' annual, 'Q' quarterly
     :param zoom: for plotting
 '''
-def forecast_lstm(ts, model=None, epochs=100, pred_ahead=None, end=None, freq="D", conf=0.95, zoom=30, figsize=(15,5)):
+def forecast_lstm(ts, model=None, epochs=100, pred_ahead=None, end=None, freq="D", conf=0.95, zoom=30, figsize=(6,6)):
     ## model
     if model is None:
         model = models.Sequential([
@@ -1014,9 +1125,9 @@ def forecast_lstm(ts, model=None, epochs=100, pred_ahead=None, end=None, freq="D
     last_s_obs = ts[-s:]
     preds = utils_predict_lstm(last_s_obs, training.model, scaler, pred_ahead=len(index), exog=None)
     dtf = dtf.append(pd.DataFrame(data=preds, index=index, columns=["forecast"]))
-    
+    print(pd.DataFrame(data=preds, index=index, columns=["forecast"]))
     ## add intervals and plot
-    dtf = utils_add_forecast_int(dtf, conf=conf, zoom=zoom)
+    dtf = utils_add_forecast_int(dtf, conf=conf, zoom=zoom, title="LSTM", figsize=figsize)
     return dtf
 
 
@@ -1080,7 +1191,7 @@ Forecast unknown future.
     :param freq: None or str - 'B' business day, 'D' daily, 'W' weekly, 'M' monthly, 'A' annual, 'Q' quarterly
     :param zoom: for plotting
 '''
-def forecast_prophet(dtf, model=None, pred_ahead=None, end=None, freq="D", conf=0.95, zoom=30, figsize=(15,5)):
+def forecast_prophet(dtf, model=None, pred_ahead=None, end=None, freq="D", conf=0.95, zoom=30, figsize=(6,6)):
     ## model
     model = Prophet() if model is None else model
 
@@ -1098,7 +1209,7 @@ def forecast_prophet(dtf, model=None, pred_ahead=None, end=None, freq="D", conf=
     preds = preds.merge(dtf_prophet[["ds","yhat","yhat_lower","yhat_upper"]], how="left").rename(
         columns={'yhat':'forecast', 'yhat_lower':'lower', 'yhat_upper':'upper'}).set_index("ds")
     dtf = dtf.append(preds)
-    
+    print(preds)
     ## plot
-    dtf = utils_add_forecast_int(dtf, conf=conf, zoom=zoom)
+    dtf = utils_add_forecast_int(dtf, conf=conf, zoom=zoom, title="Prophet", figsize=figsize)
     return dtf
